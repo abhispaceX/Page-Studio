@@ -22,9 +22,24 @@ export interface SnapshotFile {
 }
 
 /**
- * Write the immutable snapshot to disk. Local file storage works for
- * development and the screen-recorded demo; in production on Vercel, the
- * Contentful Release entry written alongside this is the durable source.
+ * True when running inside a serverless host with a read-only function
+ * filesystem (Vercel, AWS Lambda, etc). Local FS writes are a no-op there;
+ * Contentful is the only durable source of releases in prod.
+ */
+function isServerlessReadOnly(): boolean {
+  return (
+    !!process.env.VERCEL ||
+    !!process.env.AWS_LAMBDA_FUNCTION_NAME ||
+    !!process.env.LAMBDA_TASK_ROOT
+  );
+}
+
+/**
+ * Write the immutable snapshot to disk. Used for the local dev loop and the
+ * screen-recorded demo — gives reviewers a real `releases/<slug>/<version>.json`
+ * tree to look at. On serverless hosts the filesystem is read-only, so the
+ * write is skipped silently and the Contentful Release entry is the only
+ * place a snapshot lives.
  *
  * Writes are skipped (not overwritten) if the file already exists — releases
  * are immutable by contract.
@@ -32,8 +47,25 @@ export interface SnapshotFile {
 export async function writeLocalSnapshot(
   slug: string,
   payload: SnapshotFile
-): Promise<{ path: string; written: boolean }> {
-  await fs.mkdir(slugDir(slug), { recursive: true });
+): Promise<{ path: string | null; written: boolean; skipped?: "read-only-fs" }> {
+  if (isServerlessReadOnly()) {
+    return { path: null, written: false, skipped: "read-only-fs" };
+  }
+
+  try {
+    await fs.mkdir(slugDir(slug), { recursive: true });
+  } catch (e) {
+    // Treat any filesystem error as "no local cache available"; Contentful
+    // is still the source of truth. Surface to the dev console but never
+    // throw — the publish must not fail because of a local cache miss.
+    console.warn(
+      `[snapshot] Skipping local write for ${slug} — ${
+        e instanceof Error ? e.message : "filesystem error"
+      }`
+    );
+    return { path: null, written: false, skipped: "read-only-fs" };
+  }
+
   const file = snapshotPath(slug, payload.version);
   try {
     await fs.access(file);
@@ -41,8 +73,17 @@ export async function writeLocalSnapshot(
   } catch {
     // file does not exist → write
   }
-  await fs.writeFile(file, JSON.stringify(payload, null, 2), { flag: "wx" });
-  return { path: file, written: true };
+  try {
+    await fs.writeFile(file, JSON.stringify(payload, null, 2), { flag: "wx" });
+    return { path: file, written: true };
+  } catch (e) {
+    console.warn(
+      `[snapshot] Local write failed for ${slug}@${payload.version} — ${
+        e instanceof Error ? e.message : "filesystem error"
+      }`
+    );
+    return { path: null, written: false, skipped: "read-only-fs" };
+  }
 }
 
 /**
