@@ -27,16 +27,16 @@ export function PropEditor() {
   return (
     <aside
       aria-label="Properties"
-      className="flex h-full w-full flex-col border-l bg-card text-card-foreground"
+      className="flex h-full min-h-0 w-full flex-col overflow-hidden border-l bg-card text-card-foreground"
     >
-      <div className="flex items-center gap-2 border-b px-4 py-3">
+      <div className="flex shrink-0 items-center gap-2 border-b px-4 py-3">
         <Settings2 className="h-4 w-4 text-muted-foreground" aria-hidden />
         <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
           Properties
         </h2>
       </div>
 
-      <div className="flex-1 space-y-6 overflow-y-auto p-4">
+      <div className="min-h-0 flex-1 space-y-6 overflow-y-auto p-4">
         <PageMetaEditor pageTitle={page.title} pageSlug={page.slug} />
 
         {section ? (

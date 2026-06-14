@@ -94,9 +94,9 @@ export function SectionList() {
   return (
     <aside
       aria-label="Section list"
-      className="flex h-full w-full flex-col border-r bg-card text-card-foreground"
+      className="flex h-full min-h-0 w-full flex-col overflow-hidden border-r bg-card text-card-foreground"
     >
-      <div className="flex items-center justify-between border-b px-4 py-3">
+      <div className="flex shrink-0 items-center justify-between border-b px-4 py-3">
         <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
           Sections
         </h2>
@@ -105,7 +105,7 @@ export function SectionList() {
         </span>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-2">
+      <div className="min-h-0 flex-1 overflow-y-auto p-2">
         <DndContext
           sensors={sensors}
           collisionDetection={closestCenter}
@@ -146,7 +146,7 @@ export function SectionList() {
         </DndContext>
       </div>
 
-      <div className="border-t bg-muted/20 p-3">
+      <div className="shrink-0 border-t bg-muted/20 p-3">
         <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
           Add section
         </h3>

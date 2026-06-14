@@ -21,8 +21,8 @@ export function LivePreview() {
   const envelopes = asEnvelopes(page);
 
   return (
-    <div className="flex h-full flex-col bg-muted/40">
-      <div className="flex items-center justify-between gap-3 border-b bg-card px-4 py-2.5">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden bg-muted/40">
+      <div className="flex shrink-0 items-center justify-between gap-3 border-b bg-card px-4 py-2.5">
         <div className="flex items-center gap-2 text-sm">
           <Monitor className="h-4 w-4 text-muted-foreground" aria-hidden />
           <span className="font-medium">Live preview</span>
@@ -40,7 +40,7 @@ export function LivePreview() {
           <ExternalLink className="h-3 w-3" aria-hidden />
         </Link>
       </div>
-      <div className="flex-1 overflow-y-auto bg-background">
+      <div className="min-h-0 flex-1 overflow-y-auto bg-background">
         <h1 className="sr-only">{page.title}</h1>
         <SectionRenderer sections={envelopes} />
       </div>
