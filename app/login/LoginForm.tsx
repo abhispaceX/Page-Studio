@@ -66,10 +66,10 @@ export function LoginForm({
         setSubmitting(false);
         return;
       }
-      // Full-page navigation — guarantees the new session cookie is sent
-      // with the next request. `router.push` sometimes raced the cookie
-      // visibility against the next server render.
-      window.location.assign(next || "/");
+      // Full-page navigation via `replace` so the login URL is removed from
+      // browser history — pressing Back from the post-login page doesn't
+      // bounce the user back to /login.
+      window.location.replace(next || "/");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Network error");
       setSubmitting(false);

@@ -3,141 +3,201 @@
 ## Problem framing
 
 Build a Page Studio that authorised users can use to load a page from
-Contentful, edit it via a lightweight studio, preview the rendered output,
-publish it as an immutable versioned release, and have all of that gated
-by tests, accessibility checks, and CI. The brief was explicit about
-architectural correctness and automation taking priority over UI polish.
+Contentful, edit it via a lightweight WYSIWYG-lite studio, preview the
+rendered output, publish it as an immutable versioned release, and gate
+the whole thing with tests, accessibility checks, and CI. The brief
+explicitly prioritised architecture, correctness, and automation over
+UI polish — UI was to follow from Tailwind + shadcn defaults.
 
 ## Key decisions and trade-offs
 
 - **Single source of truth at the schema layer.** Section types live in
   `lib/schema/section.ts` as a Zod discriminated union; `sectionRegistry.ts`
   uses `satisfies Record<SectionType, …>` so removing a registry entry
-  breaks the TypeScript build. The same renderer feeds `/preview` and the
-  Studio's live preview — one code path, one validation surface.
-- **Server-enforced RBAC, mock identity provider.** A signed (HMAC-SHA256)
-  cookie carries `{ username, role }`. `proxy.ts` (Next 16's renamed
-  Middleware) gates `/studio/*` and `/api/publish`; the publish route
-  re-checks the session for defence in depth. I chose a hand-rolled cookie
-  over NextAuth + OAuth because the RBAC bytecode is what matters here —
-  the identity provider can be swapped without touching policy. ~1h saved
-  for the publish + diff work.
-- **Releases written to both filesystem and Contentful.** The brief's
-  `releases/<slug>/<version>.json` is honored on disk for the dev loop
-  and screen-recorded demo. A parallel `Release` entry in Contentful is
-  the durable store the deployed Vercel app reads from, since Vercel's
-  filesystem is read-only at runtime.
-- **Idempotency via canonical-JSON equality** rather than hashing — pages
-  are small JSON-serialisable objects, key-sorted before compare. Avoids a
-  whole hash-collision worry and makes the unit tests trivially readable.
-- **Up/down reorder, not drag-and-drop.** The brief says "reorder", and
-  AAA-compliant DnD with keyboard-only reorder costs ~45m. Buttons satisfy
-  both the functional spec and the a11y bar with one line of focus styling.
+  breaks the TypeScript build. The same `SectionRenderer` is used by
+  `/preview/[slug]` and the Studio's live preview — one validation
+  surface, one rendering path.
+- **Auth-first proxy.** Any URL except `/login` and the public demo
+  fixture redirects anonymous visitors to `/login?next=…`. `/studio/*`
+  additionally requires the `edit` action; `/api/publish` requires
+  `publish`. The proxy runs on the network boundary; every route handler
+  re-checks the session for defence in depth. Mock identity provider
+  (signed HMAC cookie + three seeded users) — RBAC enforcement is real;
+  the IDP is swappable.
+- **Lenient Contentful adapter.** Editors hand-author the sections JSON
+  in Contentful. The adapter unwraps the common
+  `{ sections: [...] }` envelope, aliases common prop names
+  (`title → heading`, `buttonText → ctaLabel`, etc), and drops malformed
+  sections individually instead of failing the page. Schema strictness
+  stays at the renderer — invalid data renders an inline notice or a
+  graceful fallback, but never crashes.
+- **Contentful as source of truth for versioned state.** The orchestrator
+  reads "latest release" from Contentful only — never from the local FS.
+  Local `releases/<slug>/<version>.json` is written as a dev archive for
+  the screen-recorded demo; on Vercel (read-only filesystem) the FS
+  write is a no-op and the Contentful Release entry is the durable
+  record.
+- **Idempotent publish.** Canonical-JSON equality between the draft and
+  the latest snapshot short-circuits to the existing version with
+  `idempotent: true` — same draft never cuts a duplicate release.
+- **Drag-and-drop with keyboard parity.** `dnd-kit` instead of arrow
+  buttons — accessible via `KeyboardSensor` + `sortableKeyboardCoordinates`
+  out of the box, plus built-in screen-reader announcements. Worth the
+  ~45m budget.
+- **Explicit Save + Publish, not auto-save UX.** localStorage persistence
+  stays for reload safety, but the visible action is two buttons: **Save
+  changes** writes the draft back to the Contentful Page entry (CMA);
+  **Publish release** cuts a new Release. Editors see exactly what they
+  did and when.
+- **Self-healing setup.** First publish in a fresh space auto-creates the
+  `release` content type via CMA (`ensureReleaseContentType`) — editor
+  doesn't have to script content-model migrations by hand.
 
 ## Assumptions
 
-- Contentful `Page.slug` is unique and globally identifies a page.
-  `pageId` is aliased to `slug` in the adapter (`mappers.ts`). The brief's
-  Page shape included `pageId` but the content model the user had already
-  set up did not. Documented in README §3 so the trade-off is explicit.
-- One Contentful environment per deployment (no per-request switching).
-- Editors author rich section props (FeatureGrid items, Testimonial avatars)
-  in Contentful itself; the Studio surfaces only the props the brief
-  explicitly called out (Hero text, CTA label + URL) plus page title.
-- Three pre-seeded users (`viewer`, `editor`, `publisher`) are sufficient
-  to demonstrate RBAC; production would plug in a real IdP.
+- Contentful `Page.slug` is unique and globally identifies a page. The
+  brief's `pageId` is aliased to `slug` in the adapter (`mappers.ts`) —
+  no separate field is required in Contentful.
+- One Contentful environment per deployment. The adapter is structured
+  to accept per-call overrides but no UI wires it.
+- Three pre-seeded users (`viewer`, `editor`, `publisher`) suffice to
+  demonstrate the RBAC contract. Production would plug in a real IDP
+  without touching the policy matrix.
+- Editors author rich-detail props (FeatureGrid items, Testimonial
+  avatars) in Contentful directly. The in-app Studio surfaces only the
+  props called out by the brief (Hero text, CTA label + URL) plus page
+  title.
 
 ## What is not included and why
 
-- **Drag-and-drop reorder.** Out of scope; up/down buttons satisfy the spec.
-- **Image upload from Studio.** Out of scope; URLs come from Contentful.
-- **Live `Release` listing / rollback UI.** The publish endpoint returns
-  the new version + changelog; viewing history would need an additional
-  route. Snapshot files are durable in Contentful so rollback is a
-  spreadsheet-level operation today, not a UI one.
-- **A `Release` content type seed migration.** The reader builds the
-  content model in Contentful by hand (instructions in README §3). Could
-  be automated with the CMA but adds setup friction.
-- **Per-section prop editor for FeatureGrid items and Testimonial avatars.**
-  Brief only requires Hero text + CTA label/URL.
-- **Edge runtime for Proxy.** Next 16 dropped edge support for Proxy; this
-  is a Next-side limitation, not a deliberate choice. RBAC runs on Node.
-- **One axe `serious` violation** (`scrollable-region-focusable` on `/`)
-  is unfixed. Not critical per the brief's CI gate; flagged here for
-  honesty and slated for a follow-up.
+- **Image upload from Studio.** Out of scope; image URLs come from
+  Contentful.
+- **Live "Releases" list with rollback UI.** The preview's version
+  switcher reads and renders any historical Release, but there is no
+  "promote vN.M.K to latest" action. Rollback would require either a
+  Contentful entry reordering or republishing an old snapshot as the
+  new version — both are one server action away when needed.
+- **Real OAuth identity provider.** Mock cookie keeps the auth seam
+  meaningful while saving the budget for the publish/version work.
+- **Edge runtime for Proxy.** Next 16 dropped edge support for the
+  renamed Proxy file; this is a framework constraint, not a deliberate
+  choice. RBAC runs on Node.
+- **A `serious` axe finding** (`scrollable-region-focusable` on `/`)
+  remains. Below the brief's critical threshold; triaged for a follow-up.
 
 ## Architecture overview
 
 ```
-Browser ─▶ /preview/[slug] ─▶ contentfulClient ─▶ SectionRenderer
-                                                  │
-                                                  └ Zod schema per section
-                                                    + UnsupportedSection
-                                                    + ErrorBoundary
+Anonymous browser ─▶ proxy.ts ─▶ /login (every path except /login + /preview/fixture)
 
-Browser ─▶ /studio/[slug] (proxy: editor+) ─▶ initialPage
-                                                  │
-                                                  ▼
-                                          Redux (draftPage/ui/publish)
-                                                  │
-                                          redux-persist ─▶ localStorage
-                                                  │
-                                                  ▼
-                                          LivePreview (same SectionRenderer)
-                                                  │
-PublishBar ─▶ POST /api/publish (proxy: publisher) ─▶ publish/index.ts
-                                                  │
-                                  diff ─▶ bumpVersion ─▶ writeLocalSnapshot
-                                                  │
-                                                  └ createReleaseEntry (CMA)
+Signed-in browser ─▶ /preview/[slug] (RSC)
+                     ├─ getLatestRelease()                ─▶ Contentful CMA
+                     └─ SectionRenderer
+                        ├─ Zod schema per section
+                        ├─ UnsupportedSection fallback
+                        └─ SectionErrorBoundary
+
+Editor/publisher ─▶  /studio/[slug] (RSC + Redux client)
+                     ├─ initial: latest Release || Page entry
+                     ├─ Redux: draftPage / ui / publish
+                     ├─ redux-persist → localStorage
+                     └─ LivePreview reuses SectionRenderer
+
+PublishBar Save  ─▶ POST /api/save-draft (editor+)  ─▶ updatePageEntry (CMA)
+PublishBar Pub.  ─▶ POST /api/publish (publisher)   ─▶ publish/index.ts
+                                                       ├─ ensureReleaseContentType
+                                                       ├─ getLatestRelease
+                                                       ├─ diffPages → bumpVersion
+                                                       ├─ writeLocalSnapshot (dev only)
+                                                       └─ createReleaseEntry (CMA)
 ```
 
 ## Redux slice responsibilities
 
-- **`draftPage`** — the editable Page plus `dirty` and `lastSavedAt`.
-  Reducers: `init`, `reset`, `addSection`, `removeSection`, `moveSection`,
-  `updateProps`, `updatePageMeta`, `markSaved`. The only slice persisted
-  to localStorage — drafts survive reloads.
-- **`ui`** — `selectedSectionId`, cookie-mirrored `role`, toast queue.
-  Ephemeral.
-- **`publish`** — `status`, `lastResult`, `error`. Owned by the
-  `publishDraft` async thunk.
+- **`draftPage`** — the editable Page (`pageId`, `slug`, `title`,
+  `sections[]`) plus `dirty` and `lastSavedAt`. Reducers: `init`,
+  `reset`, `addSection`, `removeSection`, `moveSection`,
+  `reorderSections`, `updateProps`, `updatePageMeta`, `markSaved`. Every
+  Studio edit goes through these; no component-local state holds draft
+  content. **The only slice persisted to localStorage.**
+- **`ui`** — `selectedSectionId`, role mirrored from the session cookie
+  (UI controls only), toast queue. Ephemeral.
+- **`publish`** — `status` (`idle`/`publishing`/`succeeded`/`failed`),
+  `lastResult` (`version`, `changes`, `changelog`, `idempotent`), plus a
+  parallel `saveStatus`, `saveError`, `lastSavedAt` driven by the
+  `saveDraft` thunk. Drives Save/Publish toasts and the bottom-bar pill.
 
 ## Contentful model and adapter
 
-`Page` (slug, title, sections JSON) is what the reader already had.
-`Release` (pageSlug, version, snapshot JSON, changelog, publishedAt) is
-the durable store of immutable releases. The adapter (`lib/contentful/`)
-isolates all Contentful imports; UI code consumes domain types only.
-Draft vs published toggles via the adapter's `{ preview }` option, fed by
-Next 16's async `draftMode()`.
+Two content types are required in the space:
+
+| Content type | Fields                                                     |
+|--------------|------------------------------------------------------------|
+| `Page`       | `slug` (Short text), `title` (Short text), `sections` (JSON object) |
+| `Release`    | `pageSlug`, `version` (Short text), `snapshot` (JSON), `changelog` (Long text), `publishedAt` (Date) |
+
+The `Release` content type is auto-provisioned by
+`ensureReleaseContentType()` on the first publish if missing — editors
+don't have to set it up manually.
+
+`lib/contentful/contentfulClient.ts` exposes `getPage(slug, { preview })`
+and `listPages()` against CDA / CPA. `managementClient.ts` exposes
+`createReleaseEntry`, `getLatestRelease`, `getReleaseByVersion`,
+`listReleasesForSlug`, and `updatePageEntry`. `mappers.ts` normalises
+editor-authored shapes before they hit the schema.
+
+UI code never imports from `contentful` or `contentful-management` — the
+adapter boundary is strict and grep-verified.
 
 ## Publish and SemVer logic
 
-Pure diff (`lib/publish/diff.ts`) walks both pages by section id:
+`lib/publish/diff.ts` is a pure function. Walks both Pages keyed by
+section id:
 
-- text/prop change → patch
-- new section / new prop → minor
-- removed section / type change / removed required prop → major
+- Text/prop value change, title change, or reorder → **patch**
+- Section added; new prop appeared → **minor**
+- Section removed, section type changed, required prop removed → **major**
 
 `bumpVersion` applies the highest bump. The orchestrator
-(`lib/publish/index.ts`) is idempotent: same draft → same version,
-no new snapshot written. Local FS and Contentful are written in that
-order so the local file is durable even if CMA hiccups. 12 unit tests
-exercise the diff and idempotency contracts.
+(`lib/publish/index.ts`):
+
+1. Validates the draft with `PageSchema`.
+2. Calls `ensureReleaseContentType()`.
+3. Reads the latest Release for the slug from Contentful.
+4. **Idempotency check** — canonical-JSON equality with the latest
+   snapshot returns the existing version untouched.
+5. Computes the diff, bumps the version.
+6. Writes `releases/<slug>/<version>.json` locally (skipped on
+   serverless), then publishes a new `Release` entry to Contentful.
+7. Returns `{ version, changes[], changelog, idempotent }`.
+
+The `/preview/[slug]` route reads via `getLatestRelease()` (or
+`getReleaseByVersion()` when a `?v=` query is present) and exposes a
+**version switcher** dropdown — every historical Release becomes
+viewable; an amber "Viewing older release" banner replaces the green
+"Live release" pill when you're not on the latest.
 
 ## Accessibility approach
 
 WCAG 2.2 AAA-oriented:
 
 - Global 3px high-contrast `:focus-visible` ring; never display:none.
-- Skip link as the first body element.
-- `prefers-reduced-motion` honoured globally (all transitions/animations
-  reduced to ~0ms).
-- Single `<h1>` per page, sections use `<h2>`, cards `<h3>`.
-- All inputs have labels; required fields use `aria-required` + visible `*`.
-- Toasts in an `aria-live="polite"` region; error toasts get `role="alert"`.
-- Muted text colours tuned past the AAA 7:1 contrast threshold.
-- axe runs in CI against `/`, `/login`, and `/preview/fixture` via
-  `@axe-core/playwright`. The report is uploaded as an artefact and the
-  build fails on any `critical` violation.
+- Skip link as the first element after `<body>`.
+- `prefers-reduced-motion` honoured globally — all transitions and
+  animations reduced to ~0ms when set.
+- One `<h1>` per page route; sections use `<h2>`, cards `<h3>`.
+- All inputs have `<Label htmlFor>`; required fields advertise
+  `aria-required` and a visible `*`.
+- Validation errors in `role="alert"` regions; toasts in
+  `aria-live="polite"` with `role="alert"` for the error level.
+- Drag-and-drop via dnd-kit ships with a `KeyboardSensor` and screen
+  reader announcements out of the box — sections are reorderable with
+  arrow keys alone.
+- Muted text contrasts tuned past AAA's 7:1 threshold.
+
+**Automated evidence**: `tests/e2e/a11y.spec.ts` runs `@axe-core/playwright`
+across `/`, `/login`, and `/preview/fixture` with the WCAG 2A/AA, 2.1
+A/AA, and 2.2 AA tag sets. Results are written to `a11y-report.json` at
+the repo root, uploaded as a CI artefact, and the run fails on **any
+`critical` violation**. Current state: **zero critical violations** on
+all three surfaces.
