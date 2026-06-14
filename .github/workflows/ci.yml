@@ -1,0 +1,73 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      # Build/start need values so the lazy Contentful clients don't throw at
+      # request time when the test webServer comes up. Real credentials (if
+      # provided as repo secrets) override these for the studio.spec.ts tests
+      # that talk to a live Contentful environment.
+      CONTENTFUL_SPACE_ID: ${{ secrets.CONTENTFUL_SPACE_ID || 'x' }}
+      CONTENTFUL_DELIVERY_TOKEN: ${{ secrets.CONTENTFUL_DELIVERY_TOKEN || 'x' }}
+      CONTENTFUL_PREVIEW_TOKEN: ${{ secrets.CONTENTFUL_PREVIEW_TOKEN || 'x' }}
+      CONTENTFUL_MANAGEMENT_TOKEN: ${{ secrets.CONTENTFUL_MANAGEMENT_TOKEN || 'x' }}
+      CONTENTFUL_ENVIRONMENT: ${{ secrets.CONTENTFUL_ENVIRONMENT || 'master' }}
+      AUTH_COOKIE_SECRET: ${{ secrets.AUTH_COOKIE_SECRET || 'ci-test-secret' }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Unit tests (Vitest)
+        run: npm test
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Build (Next.js)
+        run: npm run build
+
+      - name: Playwright e2e + axe
+        run: npm run test:e2e
+
+      - name: Upload a11y report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: a11y-report
+          path: a11y-report.json
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 14

@@ -1,0 +1,52 @@
+{
+  "pageId": "demo",
+  "slug": "demo",
+  "title": "Demo Landing",
+  "sections": [
+    {
+      "id": "hero-1",
+      "type": "hero",
+      "props": {
+        "heading": "Page Studio Demo",
+        "subheading": "Schema-driven, version-controlled landing pages.",
+        "ctaLabel": "Get started",
+        "ctaHref": "#features"
+      }
+    },
+    {
+      "id": "features-1",
+      "type": "featureGrid",
+      "props": {
+        "heading": "Why teams choose this",
+        "items": [
+          { "title": "Schema-driven", "body": "Every section is validated by Zod." },
+          { "title": "Immutable releases", "body": "SemVer-bumped, never overwritten." },
+          { "title": "Accessible by default", "body": "AAA contrast, keyboard-first." }
+        ]
+      }
+    },
+    {
+      "id": "testimonial-1",
+      "type": "testimonial",
+      "props": {
+        "quote": "It replaced four bespoke landing pages in a week.",
+        "author": "Alex Reyes",
+        "role": "Head of Growth"
+      }
+    },
+    {
+      "id": "cta-1",
+      "type": "cta",
+      "props": {
+        "label": "Talk to the team",
+        "href": "/contact",
+        "description": "Ready when you are."
+      }
+    },
+    {
+      "id": "future-1",
+      "type": "carousel",
+      "props": { "items": [] }
+    }
+  ]
+}
