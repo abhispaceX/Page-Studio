@@ -4,15 +4,18 @@ import fs from "node:fs/promises";
 import path from "node:path";
 
 /**
- * Runs axe on the public surfaces of the app, writes a single combined
- * report to a11y-report.json at the repo root, and fails the run on any
- * critical violation. CI uploads the JSON as an artefact.
+ * Runs axe on the public surfaces of the app, writes a combined report
+ * to a11y-report.json at the repo root, and fails the run on any critical
+ * violation. CI uploads the JSON as an artefact.
+ *
+ * Two surfaces (home, preview fixture) need an authenticated session under
+ * the auth-first proxy — we sign in as a viewer per test before scanning.
  */
 
 const TARGETS = [
-  { name: "home", path: "/" },
-  { name: "login", path: "/login" },
-  { name: "preview", path: "/preview/fixture" },
+  { name: "home", path: "/", auth: true },
+  { name: "login", path: "/login", auth: false },
+  { name: "preview-fixture", path: "/preview/fixture", auth: false },
 ];
 
 interface Result {
@@ -24,10 +27,15 @@ interface Result {
 const ALL: Result[] = [];
 
 for (const target of TARGETS) {
-  test(`axe: ${target.name} (${target.path})`, async ({ page }, testInfo) => {
+  test(`axe: ${target.name} (${target.path})`, async ({ page, context }, testInfo) => {
+    if (target.auth) {
+      const res = await context.request.post("/api/auth/login", {
+        data: { username: "viewer" },
+      });
+      expect(res.ok()).toBe(true);
+    }
+
     await page.goto(target.path);
-    // Disable colour-contrast for the temporary preview banner that appears
-    // only in dev draft mode; we audit the real surfaces explicitly.
     const results = await new AxeBuilder({ page })
       .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"])
       .analyze();
@@ -42,7 +50,6 @@ for (const target of TARGETS) {
       })),
     });
 
-    // CI fails on any "critical" violation, per brief.
     const critical = results.violations.filter((v) => v.impact === "critical");
     if (critical.length > 0) {
       testInfo.attach(`${target.name}-axe.json`, {
@@ -63,6 +70,10 @@ test.afterAll(async () => {
   const file = path.join(process.cwd(), "a11y-report.json");
   await fs.writeFile(
     file,
-    JSON.stringify({ generatedAt: new Date().toISOString(), results: ALL }, null, 2)
+    JSON.stringify(
+      { generatedAt: new Date().toISOString(), results: ALL },
+      null,
+      2
+    )
   );
 });

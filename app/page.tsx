@@ -11,6 +11,7 @@ import {
 
 import { listPages } from "@/lib/contentful/contentfulClient";
 import { getSession } from "@/lib/auth/session";
+import { can } from "@/lib/auth/roles";
 
 export const dynamic = "force-dynamic";
 
@@ -27,6 +28,7 @@ export default async function HomePage() {
   }
 
   const session = await getSession();
+  const canEdit = can(session?.role, "edit");
 
   return (
     <main
@@ -48,12 +50,14 @@ export default async function HomePage() {
             Page Studio
           </span>
           <h1 className="mt-4 max-w-3xl text-3xl font-semibold leading-tight tracking-tight sm:text-4xl lg:text-5xl">
-            Schema-driven landing pages, edited in a Redux-backed Studio,
-            frozen into immutable versioned releases.
+            {canEdit
+              ? "Schema-driven landing pages, edited in a Redux-backed Studio, frozen into immutable versioned releases."
+              : "Browse the latest published releases of every landing page."}
           </h1>
           <p className="mt-3 max-w-2xl text-base text-white/90">
-            Pick a page below to preview a published release or open it in
-            the Studio for editing.
+            {canEdit
+              ? "Pick a page below to preview a published release or open it in the Studio for editing."
+              : "Pick a page below to preview the latest published version."}
           </p>
           <div className="mt-6 flex flex-wrap items-center gap-3">
             <Link
@@ -78,20 +82,26 @@ export default async function HomePage() {
       <section className="mt-10">
         <div className="mb-5 flex items-end justify-between gap-3">
           <div>
-            <h2 className="text-xl font-semibold tracking-tight">Your pages</h2>
+            <h2 className="text-xl font-semibold tracking-tight">
+              {canEdit ? "Your pages" : "Published pages"}
+            </h2>
             <p className="text-sm text-muted-foreground">
-              Live entries from your Contentful space.
+              {canEdit
+                ? "Live entries from your Contentful space."
+                : "Read-only — sign in as an editor or publisher to make changes."}
             </p>
           </div>
-          <Link
-            href="https://app.contentful.com"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="hidden items-center gap-1 text-sm font-medium text-violet-700 hover:underline sm:inline-flex"
-          >
-            Open Contentful
-            <ArrowRight className="h-3.5 w-3.5" aria-hidden />
-          </Link>
+          {canEdit ? (
+            <Link
+              href="https://app.contentful.com"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="hidden items-center gap-1 text-sm font-medium text-violet-700 hover:underline sm:inline-flex"
+            >
+              Open Contentful
+              <ArrowRight className="h-3.5 w-3.5" aria-hidden />
+            </Link>
+          ) : null}
         </div>
 
         {error ? (
@@ -120,7 +130,9 @@ export default async function HomePage() {
             />
             <h3 className="mt-3 text-base font-semibold">No pages yet</h3>
             <p className="mt-1 text-sm text-muted-foreground">
-              Create a Page entry in Contentful and assign it a slug.
+              {canEdit
+                ? "Create a Page entry in Contentful and assign it a slug."
+                : "No pages have been published yet."}
             </p>
           </div>
         ) : null}
@@ -157,41 +169,59 @@ export default async function HomePage() {
                   </p>
                 </div>
                 <div className="mt-6 flex gap-2">
-                  <Link
-                    href={`/preview/${p.slug}`}
-                    className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-md border bg-background px-3 py-2 text-sm font-medium transition-colors hover:bg-accent"
-                  >
-                    <Eye className="h-4 w-4" aria-hidden="true" />
-                    Preview
-                  </Link>
-                  <Link
-                    href={`/studio/${p.slug}`}
-                    className="brand-gradient inline-flex flex-1 items-center justify-center gap-1.5 rounded-md px-3 py-2 text-sm font-medium text-white shadow-sm transition-transform hover:scale-[1.02]"
-                  >
-                    <Pencil className="h-4 w-4" aria-hidden="true" />
-                    Studio
-                  </Link>
+                  {canEdit ? (
+                    <>
+                      <Link
+                        href={`/preview/${p.slug}`}
+                        className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-md border bg-background px-3 py-2 text-sm font-medium transition-colors hover:bg-accent"
+                      >
+                        <Eye className="h-4 w-4" aria-hidden="true" />
+                        Preview
+                      </Link>
+                      <Link
+                        href={`/studio/${p.slug}`}
+                        className="brand-gradient inline-flex flex-1 items-center justify-center gap-1.5 rounded-md px-3 py-2 text-sm font-medium text-white shadow-sm transition-transform hover:scale-[1.02]"
+                      >
+                        <Pencil className="h-4 w-4" aria-hidden="true" />
+                        Studio
+                      </Link>
+                    </>
+                  ) : (
+                    <Link
+                      href={`/preview/${p.slug}`}
+                      className="brand-gradient inline-flex w-full items-center justify-center gap-1.5 rounded-md px-3 py-2 text-sm font-semibold text-white shadow-sm transition-transform hover:scale-[1.02]"
+                    >
+                      <Eye className="h-4 w-4" aria-hidden="true" />
+                      Preview
+                      <ArrowRight
+                        className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5"
+                        aria-hidden="true"
+                      />
+                    </Link>
+                  )}
                 </div>
               </article>
             </li>
           ))}
 
-          <li>
-            <Link
-              href="https://app.contentful.com"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="group flex h-full min-h-[12rem] flex-col items-center justify-center rounded-2xl border-2 border-dashed border-violet-200 bg-violet-50/40 p-6 text-center text-sm text-muted-foreground transition-colors hover:border-violet-400 hover:bg-violet-50 hover:text-foreground"
-            >
-              <span className="grid h-10 w-10 place-items-center rounded-full bg-violet-100 text-violet-700 group-hover:bg-violet-200">
-                <Plus className="h-5 w-5" aria-hidden />
-              </span>
-              <span className="mt-3 font-semibold text-foreground">
-                New page
-              </span>
-              <span className="mt-0.5 text-xs">in Contentful</span>
-            </Link>
-          </li>
+          {canEdit ? (
+            <li>
+              <Link
+                href="https://app.contentful.com"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="group flex h-full min-h-[12rem] flex-col items-center justify-center rounded-2xl border-2 border-dashed border-violet-200 bg-violet-50/40 p-6 text-center text-sm text-muted-foreground transition-colors hover:border-violet-400 hover:bg-violet-50 hover:text-foreground"
+              >
+                <span className="grid h-10 w-10 place-items-center rounded-full bg-violet-100 text-violet-700 group-hover:bg-violet-200">
+                  <Plus className="h-5 w-5" aria-hidden />
+                </span>
+                <span className="mt-3 font-semibold text-foreground">
+                  New page
+                </span>
+                <span className="mt-0.5 text-xs">in Contentful</span>
+              </Link>
+            </li>
+          ) : null}
         </ul>
       </section>
     </main>

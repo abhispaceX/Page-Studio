@@ -1,7 +1,6 @@
 "use client";
 
 import * as React from "react";
-import { useRouter } from "next/navigation";
 import { Check, Eye, LogIn, Pencil, ShieldCheck } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -45,7 +44,6 @@ export function LoginForm({
   users: SeededUser[];
   next: string;
 }) {
-  const router = useRouter();
   const [username, setUsername] = React.useState(
     users[users.length - 1]?.username ?? users[0]?.username ?? ""
   );
@@ -65,11 +63,15 @@ export function LoginForm({
       if (!res.ok) {
         const body = (await res.json().catch(() => ({}))) as { error?: string };
         setError(body.error ?? "Sign-in failed.");
+        setSubmitting(false);
         return;
       }
-      router.push(next || "/");
-      router.refresh();
-    } finally {
+      // Full-page navigation — guarantees the new session cookie is sent
+      // with the next request. `router.push` sometimes raced the cookie
+      // visibility against the next server render.
+      window.location.assign(next || "/");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Network error");
       setSubmitting(false);
     }
   };
@@ -134,7 +136,10 @@ export function LoginForm({
       </fieldset>
 
       {error ? (
-        <p role="alert" className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+        <p
+          role="alert"
+          className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+        >
           {error}
         </p>
       ) : null}

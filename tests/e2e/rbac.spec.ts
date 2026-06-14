@@ -15,9 +15,7 @@ test.describe("RBAC enforcement (server-side)", () => {
     page,
   }) => {
     const res = await page.goto("/studio/anything", { waitUntil: "load" });
-    // After redirect chain, we should be on /login
     expect(page.url()).toContain("/login");
-    // The original response chain should have a 200 (login page) at the end.
     expect(res?.status()).toBeLessThan(400);
   });
 
@@ -27,11 +25,14 @@ test.describe("RBAC enforcement (server-side)", () => {
     expect(page.url()).toContain("/login");
   });
 
-  test("anonymous POST /api/publish returns 403", async ({ request }) => {
+  test("anonymous POST /api/publish is rejected", async ({ request }) => {
+    // Auth-first proxy: anonymous API hits get 401 (not signed in) rather
+    // than 403 (signed in but lacks permission). Either response means
+    // "you cannot publish" — assert it's a 4xx auth failure.
     const res = await request.post("/api/publish", {
       data: { slug: "x", draft: {} },
     });
-    expect(res.status()).toBe(403);
+    expect([401, 403]).toContain(res.status());
   });
 
   test("editor POST /api/publish returns 403 (publisher only)", async ({
